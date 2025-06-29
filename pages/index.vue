@@ -1,5 +1,6 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, watch } from "vue";
+import { CalendarDate } from '@internationalized/date';
 
 // Nuxtプラグインから提供されたFirestoreインスタンス($db)を取得
 const { $db } = useNuxtApp();
@@ -20,8 +21,16 @@ const form = ref({
   name: "",
   title: "",
   date: "",
-  time: "",
+  time: "12:00",
 });
+
+const now = new Date()
+// localStorageから前回選択日を取得
+const savedDate = typeof window !== "undefined" ? window.localStorage.getItem('selectedDate') : null
+const initialDate = savedDate || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+form.value.date = initialDate
+
+const value = ref();
 
 const schedules = ref([]); // データベースから取得した予定リストを保持する状態
 const isLoading = ref(true); // データ読み込み中の状態
@@ -29,6 +38,7 @@ let unsubscribe = null; // リアルタイムリスナーの解除用
 
 // Read: データのリアルタイム読み取り
 onMounted(() => {
+  // Read: データのリアルタイム読み取り
   const q = query(collection($db, "schedules"), orderBy("createdAt", "desc"));
   unsubscribe = onSnapshot(q, (querySnapshot) => {
     const schedulesData = [];
@@ -38,6 +48,25 @@ onMounted(() => {
     schedules.value = schedulesData;
     isLoading.value = false;
   });
+
+  // LocalStorageから前回の日付を復元
+  const savedDateStr = window.localStorage.getItem('selectedDate');
+  if (savedDateStr) {
+    // 保存された日付がある場合
+    const [year, month, day] = savedDateStr.split('-').map(Number);
+    const restoredDate = new CalendarDate(year, month, day);
+
+    // カレンダーの表示(value)とフォームの日付(form.date)を両方更新
+    value.value = restoredDate;
+    form.value.date = savedDateStr;
+  } else {
+    // 保存された日付がない場合、今日をデフォルトにする
+    const today = new Date();
+    const todayCalendarDate = new CalendarDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    
+    value.value = todayCalendarDate; // カレンダーの表示を今日に設定
+    onSelectedDate(todayCalendarDate); // 予定リストも今日で表示し、localStorageに保存
+  }
 });
 
 // コンポーネントが破棄されるときにリスナーを解除
@@ -48,7 +77,9 @@ onUnmounted(() => {
 // カレンダーの日付選択イベント
 function onSelectedDate(date) {
   // CalendarDate型 → "YYYY-MM-DD" 文字列に変換
-  form.value.date = `${date.year}-${String(date.month).padStart(2, '0')}-${String(date.day).padStart(2, '0')}`;
+  const ymd = `${date.year}-${String(date.month).padStart(2, '0')}-${String(date.day).padStart(2, '0')}`;
+  form.value.date = ymd;
+  if (typeof window !== "undefined") window.localStorage.setItem('selectedDate', ymd);
 }
 
 // 選択中の日付の予定だけを抽出する算出プロパティ
@@ -78,7 +109,7 @@ const addSchedule = async () => {
     // フォームをリセット（名前とタイトルのみ）
     form.value.name = "";
     form.value.title = "";
-    form.value.time = "";
+    form.value.time = "12:00";
   } catch (e) {
     console.error("Error adding document: ", e);
     alert("予定の登録に失敗しました。");
@@ -196,8 +227,8 @@ const deleteSchedule = async (id) => {
     background-color: #ff4d4d;
     color: white;
     border: none;
-    border-radius: 50%;
-    width: 30px;
+    border-radius: 5px;
+    width: 60px;
     height: 30px;
     cursor: pointer;
     font-weight: bold;
